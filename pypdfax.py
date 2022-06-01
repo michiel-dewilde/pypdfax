@@ -17,7 +17,12 @@ def get_trim_bbox(img, tolerance=0.3, blur=0, backout=0):
 parser = argparse.ArgumentParser()
 parser.add_argument("input")
 parser.add_argument("output")
-parser.add_argument("--input-resolution", type=int, default=300)
+parser.add_argument("--input-resolution", type=int, default=600)
+parser.add_argument("--cutmm", type=float, default=0.0)
+parser.add_argument("--cutl", type=float, default=None)
+parser.add_argument("--cutr", type=float, default=None)
+parser.add_argument("--cutt", type=float, default=None)
+parser.add_argument("--cutb", type=float, default=None)
 parser.add_argument("--output-resolution", type=int, default=600)
 parser.add_argument("--threshold", type=float, default=0.5)
 parser.add_argument("--blur", type=float, default=0)
@@ -41,6 +46,17 @@ def layout_fun(imgwidthpx, imgheightpx, ndpi):
     imgheightpdf = img2pdf.px_to_pt(imgheightpx, ndpi[1])
     return a4inpt[0], a4inpt[1], imgwidthpdf, imgheightpdf
 
+cutl = int(round((args.cutl if args.cutl is not None else args.cutmm) / inch * args.input_resolution))
+cutr = int(round((args.cutr if args.cutr is not None else args.cutmm) / inch * args.input_resolution))
+cutt = int(round((args.cutt if args.cutt is not None else args.cutmm) / inch * args.input_resolution))
+cutb = int(round((args.cutb if args.cutb is not None else args.cutmm) / inch * args.input_resolution))
+
+def readimg(tmp_dir, pageidx):
+    pngfile = os.path.join(tmp_dir, f"{pageidx+1:06d}.png")
+    img = Image.open(pngfile)
+    img = img.crop((cutl, cutt, img.size[0] - cutr, img.size[1] - cutb))
+    return img
+
 with tempfile.TemporaryDirectory() as tmp_dir:
     output_template = os.path.join(tmp_dir, "%06d.png")
     subprocess.check_call([gs, "-dSAFER", "-dBATCH", "-dNOPAUSE", "-sDEVICE=pnggray", "-dTextAlphaBits=4", "-dGraphicsAlphaBits=4",
@@ -51,8 +67,7 @@ with tempfile.TemporaryDirectory() as tmp_dir:
     trim_bboxes = []
 
     for pageidx in range(pagecount):
-        pngfile = os.path.join(tmp_dir, f"{pageidx+1:06d}.png")
-        img = Image.open(pngfile)
+        img = readimg(tmp_dir, pageidx)
         trim_blur = 4*args.input_resolution/600
         trim_backout = 20*args.input_resolution/600
         bbox = get_trim_bbox(img, blur=trim_blur, backout=trim_backout)
@@ -67,8 +82,7 @@ with tempfile.TemporaryDirectory() as tmp_dir:
     images = []
 
     for pageidx in range(pagecount):
-        pngfile = os.path.join(tmp_dir, f"{pageidx+1:06d}.png")
-        img = Image.open(pngfile)
+        img = readimg(tmp_dir, pageidx)
         img = img.resize((round(supersample * img.size[0]), round(supersample * img.size[1])), Image.BICUBIC)
         trim_bbox = trim_bboxes[pageidx]
         trim_bbox = (max(round(supersample * trim_bbox[0]), 0), max(round(supersample * trim_bbox[1]), 0), 
